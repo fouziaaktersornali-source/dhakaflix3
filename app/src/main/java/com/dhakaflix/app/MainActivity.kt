@@ -78,7 +78,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(hero)
         search = EditText(this).apply {
             hint = "Search movies and folders"; setHintTextColor(Color.GRAY); setTextColor(Color.WHITE)
-            textSize = 14f; singleLine = true; setPadding(dp(14), dp(8), dp(14), dp(8))
+            textSize = 14f; setSingleLine(true); setPadding(dp(14), dp(8), dp(14), dp(8))
             setBackgroundColor(Color.rgb(35,35,35))
             addTextChangedListener(object : android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
