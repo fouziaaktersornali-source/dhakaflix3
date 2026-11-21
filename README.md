@@ -1,23 +1,19 @@
-# DhakaFlix Android app
+# DhakaFlix Android
 
-A dark, native Android movie browser/player starter project for the user's private DhakaFlix LAN file server.
+Native Android movie browser and in-app player for the DhakaFlix local network library.
 
-## Current configuration
-- App name: DhakaFlix
-- Initial media directory: `http://172.16.50.14/` (based on the supplied file-browser screenshot)
-- Optional website shown in screenshot: `http://172.16.50.4/`
-- Native playback: AndroidX Media3 ExoPlayer (no external player app)
-- Directory discovery: parses ordinary HTML links and recognizes common video extensions.
+## Build APK
+GitHub Actions builds a debug APK on every push to `main`, pull request, or manual run.
 
-## Build
-1. Open this folder in Android Studio (Giraffe or newer; Android SDK Platform 35 installed).
-2. Allow Gradle sync and dependency downloads.
-3. Connect an Android phone to the same Wi-Fi/LAN as the server.
-4. Build > Build Bundle(s) / APK(s) > Build APK(s).
-5. APK output: `app/build/outputs/apk/debug/app-debug.apk`.
+1. Open **Actions**.
+2. Select **Build DhakaFlix APK**.
+3. Open the latest run.
+4. Download `DhakaFlix-debug-apk` and extract `app-debug.apk`.
 
-## Important compatibility note
-This first build expects the file server at `http://172.16.50.14/` to expose an HTML directory listing with clickable links. If the server requires authentication, uses a JavaScript-only file browser, or exposes files through a special API, its exact endpoints/response format will need to be integrated. The supplied screenshots do not reveal those details. AVI and some unusual codecs may not be supported by Android's native decoders; MP4 (H.264/AAC), MKV with supported codecs, HLS and DASH are preferred.
+## Local build
+Requires JDK 17, Android SDK Platform 35, and Gradle 8.9. Run `gradle :app:assembleDebug`.
 
-## Network and testing
-The app uses HTTP cleartext because the provided LAN server URL is HTTP. The phone must be on the same LAN, or connected through an authorized VPN. This environment did not include Android SDK/Gradle, so an APK could not be compiled or device-tested here; open and build the project in Android Studio to produce the APK.
+## Server
+The app browses `http://172.16.50.14/` as an HTML directory listing and uses AndroidX Media3 ExoPlayer. The phone must have LAN/VPN access to the server. The server must allow directory listing and direct media URLs. Authentication, JavaScript-only interfaces, unsupported codecs, or custom APIs may need further integration.
+
+A cloud APK build does not prove playback against the private LAN server. Test on a real device on the same network.
