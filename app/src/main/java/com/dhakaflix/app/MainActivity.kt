@@ -1,6 +1,8 @@
 package com.dhakaflix.app
 
 import android.content.pm.ActivityInfo
+import android.media.AudioManager
+import android.view.WindowManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -9,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
 import androidx.media3.common.MediaItem
@@ -179,26 +182,127 @@ class MainActivity : AppCompatActivity() {
         releasePlayer()
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         root.removeAllViews()
-        val top = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
-        val bar = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val originalBrightness = window.attributes.screenBrightness
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
+        val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(2), dp(8), dp(2)); setBackgroundColor(Color.rgb(12,12,12)) }
         val back = Button(this).apply { text = "‹ BACK"; setTextColor(Color.WHITE); setBackgroundColor(Color.TRANSPARENT); setOnClickListener { closePlayer() } }
-        bar.addView(back)
-        bar.addView(text(entry.name, 13f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(bar)
-        playerView = PlayerView(this).apply { useController = true; setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS); setBackgroundColor(Color.BLACK) }
-        top.addView(playerView, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(top, LinearLayout.LayoutParams(-1, -1))
+        header.addView(back)
+        header.addView(text(entry.name, 13f, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+        screen.addView(header)
+
+        val videoFrame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        playerView = PlayerView(this).apply {
+            useController = false
+            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+            setBackgroundColor(Color.BLACK)
+            resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        }
+        videoFrame.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        screen.addView(videoFrame, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), dp(7)); setBackgroundColor(Color.rgb(15,15,15)) }
+        val transport = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        fun controlButton(label: String, action: () -> Unit): Button = Button(this).apply {
+            text = label; textSize = 11f; isAllCaps = false; setTextColor(Color.WHITE)
+            setBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(43,43,43)))
+            setPadding(dp(5), 0, dp(5), 0); setOnClickListener { action() }
+        }
+        val playPause = controlButton("Ⅱ  Pause") { player?.let { p -> if (p.isPlaying) p.pause() else p.play() } }
+        transport.addView(playPause, LinearLayout.LayoutParams(dp(82), dp(42)).apply { rightMargin = dp(5) })
+        transport.addView(controlButton("−10s") { player?.let { it.seekTo((it.currentPosition - 10_000L).coerceAtLeast(0L)) } }, LinearLayout.LayoutParams(dp(64), dp(42)).apply { rightMargin = dp(5) })
+        val time = text("00:00 / 00:00", 10f, Color.LTGRAY)
+        transport.addView(time, LinearLayout.LayoutParams(dp(90), -2))
+        transport.addView(controlButton("+10s") { player?.let { it.seekTo((it.currentPosition + 10_000L).coerceAtMost(if (it.duration > 0) it.duration else Long.MAX_VALUE)) } }, LinearLayout.LayoutParams(dp(64), dp(42)).apply { leftMargin = dp(5); rightMargin = dp(5) })
+        val fullscreen = controlButton("⛶ Full") {
+            val currentlyImmersive = (window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
+            window.decorView.systemUiVisibility = if (currentlyImmersive) View.SYSTEM_UI_FLAG_VISIBLE else
+                (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            fullscreen.text = if (currentlyImmersive) "⛶ Full" else "⛶ Exit"
+        }
+        transport.addView(fullscreen, LinearLayout.LayoutParams(0, dp(42), 1f))
+        controls.addView(transport)
+
+        val seek = SeekBar(this).apply {
+            max = 1000
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(229,9,20))
+            thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        }
+        controls.addView(seek, LinearLayout.LayoutParams(-1, dp(28)))
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(bar: SeekBar) {}
+            override fun onStopTrackingTouch(bar: SeekBar) {
+                val p = player ?: return
+                if (p.duration > 0) p.seekTo((p.duration * bar.progress / 1000L).coerceIn(0L, p.duration))
+            }
+            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {}
+        })
+
+        val levels = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        levels.addView(text("VOL", 10f, Color.LTGRAY, true))
+        val volume = SeekBar(this).apply {
+            max = maxVolume; progress = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.WHITE); thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        }
+        levels.addView(volume, LinearLayout.LayoutParams(0, dp(30), 1f).apply { leftMargin = dp(5); rightMargin = dp(14) })
+        volume.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(bar: SeekBar) {}
+            override fun onStopTrackingTouch(bar: SeekBar) {}
+            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) { if (fromUser) audio.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0) }
+        })
+        levels.addView(text("BRIGHT", 10f, Color.LTGRAY, true))
+        val brightness = SeekBar(this).apply {
+            max = 100
+            progress = ((if (originalBrightness < 0f) 0.65f else originalBrightness) * 100).toInt()
+            progressTintList = android.content.res.ColorStateList.valueOf(Color.rgb(255,190,70)); thumbTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        }
+        levels.addView(brightness, LinearLayout.LayoutParams(0, dp(30), 1f).apply { leftMargin = dp(5) })
+        brightness.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onStartTrackingTouch(bar: SeekBar) {}
+            override fun onStopTrackingTouch(bar: SeekBar) {}
+            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser) window.attributes = window.attributes.apply { screenBrightness = (progress / 100f).coerceIn(0.05f, 1f) }
+            }
+        })
+        controls.addView(levels)
+        screen.addView(controls)
+        root.addView(screen, LinearLayout.LayoutParams(-1, -1))
+
         try {
             player = ExoPlayer.Builder(this).build().also { exo ->
                 playerView?.player = exo
-                exo.setMediaItem(MediaItem.fromUri(entry.url))
-                exo.prepare(); exo.playWhenReady = true
+                exo.setMediaItem(MediaItem.fromUri(entry.url)); exo.prepare(); exo.playWhenReady = true
+                exo.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { playPause.text = if (isPlaying) "Ⅱ  Pause" else "▶  Play" }
+                })
             }
-        } catch (e: Exception) { Toast.makeText(this, "Unable to play this video format", Toast.LENGTH_LONG).show() }
+            val update = object : Runnable {
+                override fun run() {
+                    val p = player ?: return
+                    val duration = p.duration.takeIf { it > 0 } ?: 0L
+                    if (!seek.isPressed && duration > 0) seek.progress = ((p.currentPosition * 1000L) / duration).toInt()
+                    time.text = "${formatTime(p.currentPosition)} / ${formatTime(duration)}"
+                    playerView?.postDelayed(this, 500)
+                }
+            }
+            playerView?.post(update)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Unable to play this video format: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        val total = (ms.coerceAtLeast(0L)) / 1000L
+        return String.format("%02d:%02d", total / 60L, total % 60L)
     }
 
     private fun closePlayer() {
         releasePlayer()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         showLibraryShell()
         loadDirectory(currentUrl)
