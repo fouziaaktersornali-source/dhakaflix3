@@ -217,13 +217,14 @@ class MainActivity : AppCompatActivity() {
         val time = text("00:00 / 00:00", 10f, Color.LTGRAY)
         transport.addView(time, LinearLayout.LayoutParams(dp(90), -2))
         transport.addView(controlButton("+10s") { player?.let { it.seekTo((it.currentPosition + 10_000L).coerceAtMost(if (it.duration > 0) it.duration else Long.MAX_VALUE)) } }, LinearLayout.LayoutParams(dp(64), dp(42)).apply { leftMargin = dp(5); rightMargin = dp(5) })
-        val fullscreen = controlButton("⛶ Full") {
+        lateinit var fullscreenButton: Button
+        fullscreenButton = controlButton("⛶ Full") {
             val currentlyImmersive = (window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
             window.decorView.systemUiVisibility = if (currentlyImmersive) View.SYSTEM_UI_FLAG_VISIBLE else
                 (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-            fullscreen.text = if (currentlyImmersive) "⛶ Full" else "⛶ Exit"
+            fullscreenButton.text = if (currentlyImmersive) "⛶ Full" else "⛶ Exit"
         }
-        transport.addView(fullscreen, LinearLayout.LayoutParams(0, dp(42), 1f))
+        transport.addView(fullscreenButton, LinearLayout.LayoutParams(0, dp(42), 1f))
         controls.addView(transport)
 
         val seek = SeekBar(this).apply {
