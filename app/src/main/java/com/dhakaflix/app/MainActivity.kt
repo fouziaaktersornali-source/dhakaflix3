@@ -1,5 +1,6 @@
 package com.dhakaflix.app
 
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import android.view.WindowManager
@@ -10,11 +11,16 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.widget.*
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.setPadding
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -36,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var search: EditText
     private var allEntries: List<Entry> = emptyList()
     private var currentTitle = "DhakaFlix"
+    private var isFullscreen = false
     private val videoExt = listOf(".mp4", ".mkv", ".m4v", ".webm", ".mov", ".m3u8", ".mpd", ".ts", ".mpg", ".mpeg", ".3gp", ".avi")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -220,11 +227,21 @@ class MainActivity : AppCompatActivity() {
         lateinit var fullscreenButton: Button
         fullscreenButton = controlButton("⛶ Full") {
             val currentlyImmersive = (window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
-            window.decorView.systemUiVisibility = if (currentlyImmersive) View.SYSTEM_UI_FLAG_VISIBLE else
-                (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-            fullscreenButton.text = if (currentlyImmersive) "⛶ Full" else "⛶ Exit"
+                setFullscreen(!isFullscreen)
+            fullscreenButton.text = if (isFullscreen) "⛶ Exit" else "⛶ Full"
         }
         transport.addView(fullscreenButton, LinearLayout.LayoutParams(0, dp(42), 1f))
+        transport.addView(controlButton("Open in…") {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(Uri.parse(entry.url), "video/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(intent, "Play video with"))
+            } catch (_: Exception) {
+                Toast.makeText(this, "No compatible external video player found.", Toast.LENGTH_LONG).show()
+            }
+        }, LinearLayout.LayoutParams(dp(92), dp(42)).apply { leftMargin = dp(5) })
         controls.addView(transport)
 
         val seek = SeekBar(this).apply {
@@ -237,7 +254,11 @@ class MainActivity : AppCompatActivity() {
             override fun onStartTrackingTouch(bar: SeekBar) {}
             override fun onStopTrackingTouch(bar: SeekBar) {
                 val p = player ?: return
-                if (p.duration > 0) p.seekTo((p.duration * bar.progress / 1000L).coerceIn(0L, p.duration))
+                if (p.duration > 0) {
+                    val target = (p.duration * bar.progress.toLong() / 1000L).coerceIn(0L, p.duration)
+                    p.seekTo(target)
+                    p.playWhenReady = true
+                }
             }
             override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {}
         })
@@ -270,11 +291,75 @@ class MainActivity : AppCompatActivity() {
         })
         controls.addView(levels)
         screen.addView(controls)
+        // MX Player-style gestures: horizontal swipe seeks; left vertical swipe adjusts brightness,
+        // right vertical swipe adjusts media volume. A short tap leaves playback controls untouched.
+        var downX = 0f
+        var downY = 0f
+        var gestureMode = 0 // 1 = seek, 2 = brightness, 3 = volume
+        var startPosition = 0L
+        var startLevel = 0
+        var gestureChanged = false
+        videoFrame.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = event.x; downY = event.y; gestureMode = 0; gestureChanged = false
+                    startPosition = player?.currentPosition ?: 0L
+                    startLevel = if (event.x < videoFrame.width / 2f) {
+                        ((if (window.attributes.screenBrightness < 0f) 0.65f else window.attributes.screenBrightness) * 100).toInt()
+                    } else audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    if (gestureMode == 0 && (kotlin.math.abs(dx) > dp(18) || kotlin.math.abs(dy) > dp(18))) {
+                        gestureMode = if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) 1 else if (downX < videoFrame.width / 2f) 2 else 3
+                    }
+                    if (gestureMode != 0) {
+                        gestureChanged = true
+                        when (gestureMode) {
+                            1 -> {
+                                val p = player
+                                if (p != null && p.duration > 0) {
+                                    val delta = (dx / videoFrame.width * p.duration * 0.35f).toLong()
+                                    p.seekTo((startPosition + delta).coerceIn(0L, p.duration))
+                                }
+                            }
+                            2 -> {
+                                val level = (startLevel - dy / videoFrame.height * 100).toInt().coerceIn(5, 100)
+                                window.attributes = window.attributes.apply { screenBrightness = level / 100f }
+                                brightness.progress = level
+                            }
+                            3 -> {
+                                val level = (startLevel - dy / videoFrame.height * maxVolume).toInt().coerceIn(0, maxVolume)
+                                audio.setStreamVolume(AudioManager.STREAM_MUSIC, level, 0)
+                                volume.progress = level
+                            }
+                        }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (gestureChanged) {
+                        val message = when (gestureMode) {
+                            1 -> "Seek: ${formatTime(player?.currentPosition ?: 0L)}"
+                            2 -> "Brightness: ${brightness.progress}%"
+                            3 -> "Volume: ${volume.progress * 100 / maxVolume}%"
+                            else -> ""
+                        }
+                        if (message.isNotEmpty()) Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+                    }
+                    true
+                }
+                else -> true
+            }
+        }
         root.addView(screen, LinearLayout.LayoutParams(-1, -1))
 
         try {
             player = ExoPlayer.Builder(this).build().also { exo ->
                 playerView?.player = exo
+                exo.seekParameters = SeekParameters.EXACT
                 exo.setMediaItem(MediaItem.fromUri(entry.url)); exo.prepare(); exo.playWhenReady = true
                 exo.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { playPause.text = if (isPlaying) "Ⅱ  Pause" else "▶  Play" }
@@ -303,10 +388,22 @@ class MainActivity : AppCompatActivity() {
     private fun closePlayer() {
         releasePlayer()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+        setFullscreen(false)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         showLibraryShell()
         loadDirectory(currentUrl)
+    }
+
+    private fun setFullscreen(enabled: Boolean) {
+        isFullscreen = enabled
+        WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (enabled) {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
     }
 
     private fun releasePlayer() { playerView?.player = null; player?.release(); player = null; playerView = null }
