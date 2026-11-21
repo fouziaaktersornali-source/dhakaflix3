@@ -193,6 +193,7 @@ class MainActivity : AppCompatActivity() {
         val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val originalBrightness = window.attributes.screenBrightness
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        setFullscreen(false)
 
         val screen = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.BLACK) }
         val header = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(2), dp(8), dp(2)); setBackgroundColor(Color.rgb(12,12,12)) }
@@ -228,6 +229,8 @@ class MainActivity : AppCompatActivity() {
         fullscreenButton = controlButton("⛶ Full") {
             val currentlyImmersive = (window.decorView.systemUiVisibility and View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
                 setFullscreen(!isFullscreen)
+            header.visibility = if (isFullscreen) View.GONE else View.VISIBLE
+            controls.visibility = if (isFullscreen) View.GONE else View.VISIBLE
             fullscreenButton.text = if (isFullscreen) "⛶ Exit" else "⛶ Full"
         }
         transport.addView(fullscreenButton, LinearLayout.LayoutParams(0, dp(42), 1f))
@@ -340,6 +343,11 @@ class MainActivity : AppCompatActivity() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!gestureChanged && event.actionMasked == MotionEvent.ACTION_UP && isFullscreen) {
+                        val show = controls.visibility != View.VISIBLE
+                        controls.visibility = if (show) View.VISIBLE else View.GONE
+                        header.visibility = if (show) View.VISIBLE else View.GONE
+                    }
                     if (gestureChanged) {
                         val message = when (gestureMode) {
                             1 -> "Seek: ${formatTime(player?.currentPosition ?: 0L)}"
