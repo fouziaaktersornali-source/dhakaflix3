@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
         try {
             player = ExoPlayer.Builder(this).build().also { exo ->
                 playerView?.player = exo
-                exo.seekParameters = SeekParameters.EXACT
+                exo.setSeekParameters(SeekParameters.EXACT)
                 exo.setMediaItem(MediaItem.fromUri(entry.url)); exo.prepare(); exo.playWhenReady = true
                 exo.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { playPause.text = if (isPlaying) "Ⅱ  Pause" else "▶  Play" }
